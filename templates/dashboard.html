@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disparo de WhatsApp | by HAD Cloud</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .instance-status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .status-open { background-color: #28a745; }
+        .status-closed { background-color: #dc3545; }
+        .status-connecting { background-color: #ffc107; }
+        
+        .sending-progress {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            z-index: 1050;
+        }
+        
+        .template-actions {
+            display: none;
+        }
+        
+        .list-group-item:hover .template-actions {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12 text-center mb-4">
+                <h2>Disparo de WhatsApp | by HAD Cloud</h2>
+            </div>
+        </div>
+
+        <!-- Instance Selection -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Instância WhatsApp</h5>
+                <button class="btn btn-sm btn-primary" onclick="loadInstances()">
+                    <i class="bi bi-arrow-clockwise"></i> Atualizar Instâncias
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col">
+                        <select class="form-select" id="instanceSelect">
+                            <option value="">Selecione uma instância...</option>
+                            {% for instance in instances %}
+                            <option value="{{ instance.instance.instanceName }}">
+                                {{ instance.instance.instanceName }}
+                                {% if instance.instance.owner %}
+                                    - {{ instance.instance.owner }}
+                                {% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div id="instanceStatus" class="alert alert-info" role="alert">
+                    Selecione uma instância para ver o status
+                </div>
+            </div>
+        </div>
+
+        <!-- Numbers Input -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Números para Envio</h5>
+            </div>
+            <div class="card-body">
+                <div class="form-group mb-3">
+                    <label for="numbersInput" class="form-label">Cole os números (um por linha)</label>
+                    <textarea class="form-control" id="numbersInput" rows="5" 
+                        onpaste="handlePaste(event)" 
+                        placeholder="Exemplo:&#10;+55 83 99999-9999&#10;+55 83 8888-8888"></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="validateNumbers()">
+                    <i class="bi bi-check-circle"></i> Validar Números
+                </button>
+            </div>
+        </div>
+
+        <!-- Validated Numbers -->
+        <div class="card mb-4" id="validatedNumbersCard" style="display: none;">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Números Validados</h5>
+            </div>
+            <div class="card-body">
+                <div id="validatedNumbers" class="mb-3"></div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <label for="pageSize" class="form-label">Itens por página:</label>
+                        <select class="form-select" id="pageSize" onchange="updateValidationResults()">
+                            <option value="5" selected>5</option>
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                    <div id="pagination" style="display: none;">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="previousPage()">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <span id="currentPage"></span> de <span id="totalPages"></span>
+                        <button class="btn btn-sm btn-outline-primary ms-1" onclick="nextPage()">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message Templates -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Templates de Mensagem</h5>
+                <button class="btn btn-primary btn-sm" onclick="showAddTemplateModal()">
+                    <i class="bi bi-plus-circle"></i> Novo Template
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="list-group" id="messageTemplates">
+                    {% for template in message_templates %}
+                    <div class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between align-items-center">
+                            <h6 class="mb-1">{{ template.name }}</h6>
+                            <div class="template-actions">
+                                <button class="btn btn-sm btn-outline-primary me-1" onclick="editTemplate({{ template.id }})">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate({{ template.id }})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="mb-1">{{ template.content }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sending Controls -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Controles de Envio</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Intervalo de Delay (segundos)</label>
+                    <div class="row">
+                        <div class="col">
+                            <input type="number" class="form-control" id="minDelay" value="10" min="10">
+                        </div>
+                        <div class="col">
+                            <input type="number" class="form-control" id="maxDelay" value="30" min="10">
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-success" onclick="startSending()">Iniciar Envio</button>
+            </div>
+        </div>
+
+        <!-- Sending History -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Histórico de Envios</h5>
+                <button class="btn btn-danger btn-sm" onclick="clearHistory()">
+                    <i class="bi bi-trash"></i> Limpar Histórico
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Data/Hora</th>
+                                <th>Instância</th>
+                                <th>Número</th>
+                                <th>Mensagem</th>
+                                <th>Status</th>
+                                <th>Delay</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sendingHistory">
+                            {% for entry in history %}
+                            <tr>
+                                <td>{{ entry['sent_date'] }}</td>
+                                <td>{{ entry['instance_name'] }}</td>
+                                <td>{{ entry['number'] }}</td>
+                                <td>{{ entry['message'] }}</td>
+                                <td>
+                                    <span class="badge {% if entry['status'] == 'success' %}bg-success{% else %}bg-danger{% endif %}">
+                                        {{ entry['status'] }}
+                                        {% if entry['error'] %}
+                                        <i class="bi bi-info-circle" title="{{ entry['error'] }}"></i>
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td>{{ entry['delay'] }}s</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Template Modal -->
+    <div class="modal fade" id="templateModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="templateModalTitle">Adicionar Template</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="templateId">
+                    <div class="mb-3">
+                        <label for="templateName" class="form-label">Nome do Template</label>
+                        <input type="text" class="form-control" id="templateName">
+                    </div>
+                    <div class="mb-3">
+                        <label for="templateContent" class="form-label">Conteúdo da Mensagem</label>
+                        <textarea class="form-control" id="templateContent" rows="5"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="saveTemplate()">Salvar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sending Progress -->
+    <div class="sending-progress" style="display: none;">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Progresso do Envio</h6>
+                <div class="progress mb-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="sendingStatus" class="small"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <script>
+        // Socket.IO setup
+        const socket = io();
+        
+        // Template Modal
+        const templateModal = new bootstrap.Modal(document.getElementById('templateModal'));
+        
+        function showAddTemplateModal() {
+            document.getElementById('templateModalTitle').textContent = 'Adicionar Template';
+            document.getElementById('templateId').value = '';
+            document.getElementById('templateName').value = '';
+            document.getElementById('templateContent').value = '';
+            templateModal.show();
+        }
+        
+        function editTemplate(templateId) {
+            const template = document.querySelector(`[data-template-id="${templateId}"]`);
+            const content = template.querySelector('.template-content').textContent;
+            const name = template.querySelector('h6').textContent;
+            
+            document.getElementById('templateModalTitle').textContent = 'Editar Template';
+            document.getElementById('templateId').value = templateId;
+            document.getElementById('templateName').value = name;
+            document.getElementById('templateContent').value = content;
+            templateModal.show();
+        }
+        
+        // Função para salvar template
+        function saveTemplate() {
+            const templateId = document.getElementById('templateId').value;
+            const templateName = document.getElementById('templateName').value;
+            const templateContent = document.getElementById('templateContent').value;
+
+            if (!templateName || !templateContent) {
+                alert('Por favor, preencha todos os campos.');
+                return;
+            }
+
+            const method = templateId ? 'PUT' : 'POST';
+            const data = {
+                id: templateId || null,
+                name: templateName,
+                content: templateContent
+            };
+
+            fetch('/message-templates', {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.error) {
+                    alert('Erro ao salvar template: ' + result.error);
+                    return;
+                }
+                
+                // Limpa o formulário
+                document.getElementById('templateId').value = '';
+                document.getElementById('templateName').value = '';
+                document.getElementById('templateContent').value = '';
+                
+                // Fecha o modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('templateModal'));
+                modal.hide();
+                
+                // Recarrega os templates
+                loadTemplates();
+            })
+            .catch(error => {
+                console.error('Erro:', error);
+                alert('Erro ao salvar template. Tente novamente.');
+            });
+        }
+        
+        function deleteTemplate(templateId) {
+            if (!confirm('Tem certeza que deseja excluir este template?')) {
+                return;
+            }
+            
+            fetch('/message-templates', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: templateId })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    loadTemplates();
+                }
+            })
+            .catch(error => {
+                console.error('Erro ao excluir template:', error);
+                alert('Erro ao excluir template');
+            });
+        }
+        
+        function loadTemplates() {
+            fetch('/message-templates')
+            .then(response => response.json())
+            .then(templates => {
+                const container = document.getElementById('messageTemplates');
+                container.innerHTML = templates.map(template => `
+                    <div class="list-group-item list-group-item-action" data-template-id="${template.id}">
+                        <div class="d-flex w-100 justify-content-between align-items-center">
+                            <div class="template-content">
+                                <h6 class="mb-1">${template.name || ''}</h6>
+                                <p class="mb-1">${template.content || ''}</p>
+                            </div>
+                            <div class="template-actions">
+                                <button class="btn btn-sm btn-outline-primary me-1" onclick="editTemplate(${template.id})">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(${template.id})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            })
+            .catch(error => {
+                console.error('Erro ao carregar templates:', error);
+            });
+        }
+
+        // Variáveis globais para paginação
+        let validationResults = [];
+        let currentPage = 1;
+        let pageSize = 5;  // Valor padrão inicial
+        
+        // Função para atualizar a exibição dos resultados com paginação
+        function updateValidationResults() {
+            const validatedDiv = document.getElementById('validatedNumbers');
+            pageSize = parseInt(document.getElementById('pageSize').value);
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginatedResults = validationResults.slice(startIndex, endIndex);
+            
+            // Calcula o total de páginas
+            const totalPages = Math.ceil(validationResults.length / pageSize);
+            document.getElementById('totalPages').textContent = totalPages;
+            document.getElementById('currentPage').textContent = currentPage;
+            
+            // Mostra ou esconde a paginação
+            document.getElementById('pagination').style.display = 
+                validationResults.length > pageSize ? 'flex' : 'none';
+
+            // Cria o resumo da validação
+            let html = `
+                <div class="alert alert-info mb-3">
+                    <strong>Resumo da Validação:</strong><br>
+                    Total: ${validationResults.length} números<br>
+                    Válidos: ${validationResults.filter(r => r.valid).length} números<br>
+                    Inválidos: ${validationResults.filter(r => !r.valid).length} números<br>
+                    Mostrando ${startIndex + 1} - ${Math.min(endIndex, validationResults.length)} de ${validationResults.length}
+                </div>
+                <div class="list-group">
+            `;
+
+            // Adiciona cada número e seu resultado
+            paginatedResults.forEach(result => {
+                const badgeClass = result.valid ? 'bg-success' : 'bg-danger';
+                const status = result.valid ? 'Válido' : 'Inválido';
+                const error = result.error ? `<br><small class="text-danger">${result.error}</small>` : '';
+                const jid = result.jid ? `<br><small class="text-muted">JID: ${result.jid}</small>` : '';
+
+                html += `
+                    <div class="list-group-item d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${result.number}</strong>
+                            ${jid}
+                            ${error}
+                        </div>
+                        <span class="badge ${badgeClass}">${status}</span>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            validatedDiv.innerHTML = html;
+        }
+
+        // Função para ir para a página anterior
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                updateValidationResults();
+            }
+        }
+
+        // Função para ir para a próxima página
+        function nextPage() {
+            const totalPages = Math.ceil(validationResults.length / pageSize);
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateValidationResults();
+            }
+        }
+
+        // Função para limpar e formatar números
+        function cleanPhoneNumber(number) {
+            // Remove o cabeçalho 'phone' se existir
+            if (number.toLowerCase().trim() === 'phone') return '';
+            
+            // Remove caracteres especiais e espaços
+            return number.replace(/[\+\-\s\(\)]/g, '')
+                        .trim();
+        }
+
+        // Função para processar os números colados
+        function handlePaste(event) {
+            // Previne o comportamento padrão do paste
+            event.preventDefault();
+            
+            // Pega o texto do clipboard
+            const pastedText = event.clipboardData.getData('text');
+            
+            // Processa cada linha
+            const lines = pastedText.split('\n');
+            const processedLines = lines
+                .map(line => cleanPhoneNumber(line))
+                .filter(line => line.length > 0); // Remove linhas vazias
+            
+            // Atualiza o textarea com os números processados
+            event.target.value = processedLines.join('\n');
+        }
+
+        // Função para carregar instâncias
+        function loadInstances() {
+            const statusDiv = document.getElementById('instanceStatus');
+            const select = document.getElementById('instanceSelect');
+            
+            statusDiv.className = 'alert alert-info';
+            statusDiv.textContent = 'Carregando instâncias...';
+            
+            fetch('/fetch-instances')
+                .then(response => response.json())
+                .then(data => {
+                    select.innerHTML = '<option value="">Selecione uma instância...</option>';
+                    
+                    if (Array.isArray(data)) {
+                        data.forEach(item => {
+                            if (item.instance && item.instance.instanceName) {
+                                const option = document.createElement('option');
+                                option.value = item.instance.instanceName;
+                                option.textContent = `${item.instance.instanceName}${item.instance.owner ? ` - ${item.instance.owner}` : ''}`;
+                                select.appendChild(option);
+                            }
+                        });
+                        
+                        statusDiv.className = 'alert alert-success';
+                        statusDiv.innerHTML = `${data.length} instância(s) encontrada(s)`;
+                    } else {
+                        statusDiv.className = 'alert alert-danger';
+                        statusDiv.innerHTML = data.error || 'Erro ao carregar instâncias';
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao carregar instâncias:', error);
+                    statusDiv.className = 'alert alert-danger';
+                    statusDiv.innerHTML = `Erro ao carregar instâncias: ${error}`;
+                });
+        }
+
+        // Event listener para mudança de instância
+        document.getElementById('instanceSelect').addEventListener('change', function() {
+            const instanceName = this.value;
+            const statusDiv = document.getElementById('instanceStatus');
+            
+            if (!instanceName) {
+                statusDiv.className = 'alert alert-info';
+                statusDiv.innerHTML = 'Selecione uma instância';
+                return;
+            }
+
+            statusDiv.className = 'alert alert-info';
+            statusDiv.innerHTML = 'Verificando status...';
+            
+            fetch(`/check-instance-status?instance=${encodeURIComponent(instanceName)}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Status data:', data); // Debug
+
+                    if (data.status === 'error') {
+                        statusDiv.className = 'alert alert-danger';
+                        statusDiv.innerHTML = `<div class="instance-status status-closed"></div> ${data.error}`;
+                        return;
+                    }
+
+                    let statusClass, statusText;
+                    switch (data.status) {
+                        case 'CONNECTED':
+                            statusClass = 'status-open';
+                            statusText = 'Conectada';
+                            break;
+                        case 'CONNECTING':
+                            statusClass = 'status-connecting';
+                            statusText = 'Conectando';
+                            break;
+                        case 'DISCONNECTED':
+                            statusClass = 'status-closed';
+                            statusText = 'Desconectada';
+                            break;
+                        default:
+                            statusClass = 'status-closed';
+                            statusText = 'Status Desconhecido';
+                    }
+
+                    let statusHtml = `<div class="instance-status ${statusClass}"></div> ${instanceName} - ${statusText}`;
+                    
+                    if (data.details) {
+                        if (data.details.owner) {
+                            // Remove o @s.whatsapp.net do número
+                            const ownerNumber = data.details.owner.replace('@s.whatsapp.net', '');
+                            statusHtml += `<br><small>Número: ${ownerNumber}</small>`;
+                        }
+                        if (data.details.profileName) {
+                            statusHtml += `<br><small>Nome do Perfil: ${data.details.profileName}</small>`;
+                        }
+                        if (data.details.connectionState && data.details.instanceStatus) {
+                            statusHtml += `<br><small>Estado da Conexão: ${data.details.connectionState}</small>`;
+                            statusHtml += `<br><small>Status da Instância: ${data.details.instanceStatus}</small>`;
+                        }
+                    }
+
+                    statusDiv.className = `alert alert-${data.status === 'CONNECTED' ? 'success' : data.status === 'CONNECTING' ? 'warning' : 'danger'}`;
+                    statusDiv.innerHTML = statusHtml;
+                })
+                .catch(error => {
+                    console.error('Erro ao verificar status:', error);
+                    statusDiv.className = 'alert alert-danger';
+                    statusDiv.innerHTML = `<div class="instance-status status-closed"></div> Erro ao verificar status: ${error}`;
+                });
+        });
+
+        // Função para validar números
+        function validateNumbers() {
+            const instanceName = document.getElementById('instanceSelect').value;
+            if (!instanceName) {
+                alert('Por favor, selecione uma instância.');
+                return;
+            }
+
+            const numbersText = document.getElementById('numbersInput').value;
+            const numbers = numbersText.split('\n')
+                .map(n => cleanPhoneNumber(n))
+                .filter(n => n.length > 0);
+
+            if (numbers.length === 0) {
+                alert('Por favor, insira pelo menos um número.');
+                return;
+            }
+
+            const validatedDiv = document.getElementById('validatedNumbers');
+            const card = document.getElementById('validatedNumbersCard');
+            
+            validatedDiv.innerHTML = '<div class="alert alert-info">Validando números...</div>';
+            card.style.display = 'block';
+
+            fetch('/validate-numbers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    numbers: numbers,
+                    instance: instanceName
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    validatedDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                    return;
+                }
+
+                // Atualiza o textarea com os números processados
+                document.getElementById('numbersInput').value = numbers.join('\n');
+
+                // Armazena os resultados e atualiza a exibição
+                validationResults = data.results;
+                currentPage = 1;
+                updateValidationResults();
+            })
+            .catch(error => {
+                console.error('Erro ao validar números:', error);
+                validatedDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        Erro ao validar números: ${error}
+                    </div>
+                `;
+            });
+        }
+
+        // WebSocket event handlers
+        socket.on('send_progress', function(data) {
+            const progress = (data.current / data.total) * 100;
+            document.querySelector('.sending-progress').style.display = 'block';
+            document.querySelector('.progress-bar').style.width = `${progress}%`;
+            document.getElementById('sendingStatus').textContent = 
+                `Enviando ${data.current} de ${data.total} mensagens... (${data.number})`;
+        });
+
+        socket.on('send_result', function(data) {
+            const history = document.getElementById('sendingHistory');
+            const row = document.createElement('tr');
+            const now = new Date().toLocaleString();
+            
+            row.innerHTML = `
+                <td>${now}</td>
+                <td>${document.getElementById('instanceSelect').value}</td>
+                <td>${data.number}</td>
+                <td>${document.querySelector('[data-template-id].active .template-content').textContent}</td>
+                <td>
+                    <span class="badge ${data.status === 'success' ? 'bg-success' : 'bg-danger'}">
+                        ${data.status}
+                        ${data.error ? `<i class="bi bi-info-circle" title="${data.error}"></i>` : ''}
+                    </span>
+                </td>
+                <td>${data.delay}s</td>
+            `;
+            
+            history.insertBefore(row, history.firstChild);
+        });
+
+        socket.on('send_error', function(data) {
+            console.error('Erro no envio:', data);
+            alert(`Erro ao enviar para ${data.number}: ${data.error}`);
+        });
+
+        socket.on('send_complete', function(data) {
+            document.querySelector('.sending-progress').style.display = 'none';
+            alert(`Envio concluído! ${data.total_sent} mensagens enviadas.`);
+        });
+
+        // Start sending messages
+        function startSending() {
+            const instanceName = document.getElementById('instanceSelect').value;
+            if (!instanceName) {
+                alert('Por favor, selecione uma instância.');
+                return;
+            }
+
+            // Pega todos os números válidos da lista completa de validação
+            const validNumbers = validationResults
+                .filter(result => result.valid)
+                .map(result => result.number);
+
+            if (validNumbers.length === 0) {
+                alert('Nenhum número válido para envio. Por favor, valide os números primeiro.');
+                return;
+            }
+
+            const activeTemplate = document.querySelector('[data-template-id].active');
+            if (!activeTemplate) {
+                alert('Por favor, selecione um template de mensagem.');
+                return;
+            }
+
+            const templateId = activeTemplate.dataset.templateId;
+            const minDelay = parseInt(document.getElementById('minDelay').value);
+            const maxDelay = parseInt(document.getElementById('maxDelay').value);
+
+            if (minDelay > maxDelay) {
+                alert('O delay mínimo deve ser menor que o máximo.');
+                return;
+            }
+
+            if (!confirm(`Deseja enviar a mensagem para ${validNumbers.length} números?`)) {
+                return;
+            }
+
+            // Reset progress
+            document.querySelector('.progress-bar').style.width = '0%';
+            document.querySelector('.progress-bar').textContent = '0%';
+            document.querySelector('.sending-progress').style.display = 'block';
+            document.getElementById('sendButton').disabled = true;
+
+            // Envia a requisição
+            fetch('/send-messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    instance: instanceName,
+                    numbers: validNumbers,
+                    template_id: templateId,
+                    delay_range: [minDelay, maxDelay]
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Erro ao iniciar envio: ' + data.error);
+                    document.getElementById('sendButton').disabled = false;
+                    document.querySelector('.sending-progress').style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Erro:', error);
+                alert('Erro ao iniciar envio. Tente novamente.');
+                document.getElementById('sendButton').disabled = false;
+                document.querySelector('.sending-progress').style.display = 'none';
+            });
+        }
+
+        // Template selection
+        document.getElementById('messageTemplates').addEventListener('click', function(e) {
+            const item = e.target.closest('.list-group-item');
+            if (item && !e.target.closest('.template-actions')) {
+                document.querySelectorAll('[data-template-id]').forEach(el => el.classList.remove('active'));
+                item.classList.add('active');
+            }
+        });
+
+        // Função para limpar histórico
+        function clearHistory() {
+            if (confirm('Tem certeza que deseja limpar todo o histórico de envios?')) {
+                fetch('/clear-history', {
+                    method: 'POST',
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('sendingHistory').innerHTML = '';
+                        alert('Histórico limpo com sucesso!');
+                    } else {
+                        alert('Erro ao limpar histórico: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    alert('Erro ao limpar histórico. Tente novamente.');
+                });
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadInstances();
+            loadTemplates();
+        });
+    </script>
+</body>
+</html>
