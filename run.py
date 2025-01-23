@@ -191,12 +191,17 @@ def validate_numbers():
         # Remove espaços e caracteres especiais dos números
         cleaned_numbers = []
         for number in numbers:
-            # Remove espaços e caracteres especiais
+            # Remove espaços, pontos e outros caracteres especiais
+            number = number.replace('.', '').replace('+', '').replace('-', '').replace(' ', '')
+            # Remove qualquer caractere que não seja dígito
             cleaned = ''.join(filter(str.isdigit, number))
             # Adiciona o código do país se não estiver presente
             if len(cleaned) <= 13 and not cleaned.startswith('55'):
                 cleaned = '55' + cleaned
             cleaned_numbers.append(cleaned)
+
+        # Remove números duplicados mantendo a ordem
+        cleaned_numbers = list(dict.fromkeys(cleaned_numbers))
 
         # Monta o payload para a API
         payload = {

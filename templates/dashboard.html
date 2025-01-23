@@ -467,8 +467,8 @@
             // Remove o cabeçalho 'phone' se existir
             if (number.toLowerCase().trim() === 'phone') return '';
             
-            // Remove caracteres especiais e espaços
-            return number.replace(/[\+\-\s\(\)]/g, '')
+            // Remove caracteres especiais, pontos e espaços
+            return number.replace(/[\+\-\s\(\)\.\,]/g, '')
                         .trim();
         }
 
@@ -480,11 +480,11 @@
             // Pega o texto do clipboard
             const pastedText = event.clipboardData.getData('text');
             
-            // Processa cada linha
+            // Processa cada linha e remove duplicatas
             const lines = pastedText.split('\n');
-            const processedLines = lines
+            const processedLines = [...new Set(lines
                 .map(line => cleanPhoneNumber(line))
-                .filter(line => line.length > 0); // Remove linhas vazias
+                .filter(line => line.length > 0))]; // Remove linhas vazias e duplicatas
             
             // Atualiza o textarea com os números processados
             event.target.value = processedLines.join('\n');
