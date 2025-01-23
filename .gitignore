@@ -129,6 +129,7 @@ env.bak/
 venv.bak/
 
 #database
+message.db
 database.db
 .db
 
