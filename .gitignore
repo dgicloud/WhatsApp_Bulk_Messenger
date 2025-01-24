@@ -130,6 +130,7 @@ venv.bak/
 
 #database
 message.db
+messages.db
 database.db
 .db
 
