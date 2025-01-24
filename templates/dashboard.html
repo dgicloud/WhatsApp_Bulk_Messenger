@@ -191,28 +191,32 @@
                                 <th>Mensagem</th>
                                 <th>Status</th>
                                 <th>Delay</th>
+                                <th>Tempo Total</th>
                             </tr>
                         </thead>
                         <tbody id="sendingHistory">
-                            {% for entry in history %}
-                            <tr>
-                                <td>{{ entry['sent_date'] }}</td>
-                                <td>{{ entry['instance_name'] }}</td>
-                                <td>{{ entry['number'] }}</td>
-                                <td>{{ entry['message'] }}</td>
-                                <td>
-                                    <span class="badge {% if entry['status'] == 'success' %}bg-success{% else %}bg-danger{% endif %}">
-                                        {{ entry['status'] }}
-                                        {% if entry['error'] %}
-                                        <i class="bi bi-info-circle" title="{{ entry['error'] }}"></i>
-                                        {% endif %}
-                                    </span>
-                                </td>
-                                <td>{{ entry['delay'] }}s</td>
-                            </tr>
-                            {% endfor %}
                         </tbody>
                     </table>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <div>
+                        <label for="historyPageSize" class="form-label">Itens por página:</label>
+                        <select class="form-select" id="historyPageSize" onchange="updateHistoryDisplay()">
+                            <option value="5" selected>5</option>
+                            <option value="10">10</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                    <div id="historyPagination">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="previousHistoryPage()">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <span id="currentHistoryPage">1</span> de <span id="totalHistoryPages">1</span>
+                        <button class="btn btn-sm btn-outline-primary ms-1" onclick="nextHistoryPage()">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -251,7 +255,14 @@
             <div class="card-body">
                 <h6 class="card-title">Progresso do Envio</h6>
                 <div class="progress mb-3">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" 
+                         aria-valuenow="0" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100" 
+                         style="width: 0%">
+                        <span class="progress-text">0%</span>
+                    </div>
                 </div>
                 <div id="sendingStatus" class="small"></div>
             </div>
@@ -659,33 +670,43 @@
 
         // WebSocket event handlers
         socket.on('send_progress', function(data) {
-            const progress = (data.current / data.total) * 100;
+            const progress = Math.round((data.current / data.total) * 100);
+            const progressBar = document.querySelector('.sending-progress .progress-bar');
+            const progressText = progressBar.querySelector('.progress-text');
+            
             document.querySelector('.sending-progress').style.display = 'block';
-            document.querySelector('.progress-bar').style.width = `${progress}%`;
-            document.getElementById('sendingStatus').textContent = 
-                `Enviando ${data.current} de ${data.total} mensagens... (${data.number})`;
+            progressBar.style.width = `${progress}%`;
+            progressBar.setAttribute('aria-valuenow', progress);
+            progressText.textContent = `${progress}%`;
+            
+            // Formata o tempo decorrido
+            const minutes = Math.floor(data.elapsed_time / 60);
+            const seconds = data.elapsed_time % 60;
+            const timeStr = minutes > 0 ? 
+                `${minutes}min ${seconds}s` : 
+                `${seconds}s`;
+            
+            document.getElementById('sendingStatus').innerHTML = 
+                `Enviando ${data.current} de ${data.total} mensagens... (${data.number})<br>` +
+                `Tempo decorrido: ${timeStr}`;
         });
 
         socket.on('send_result', function(data) {
-            const history = document.getElementById('sendingHistory');
-            const row = document.createElement('tr');
+            // Adiciona o novo resultado ao início do array
             const now = new Date().toLocaleString();
+            const newResult = {
+                sent_date: now,
+                instance_name: document.getElementById('instanceSelect').value,
+                number: data.number,
+                message: document.querySelector('[data-template-id].active .template-content').textContent,
+                status: data.status,
+                error: data.error,
+                delay: data.delay,
+                total_time: data.total_time
+            };
             
-            row.innerHTML = `
-                <td>${now}</td>
-                <td>${document.getElementById('instanceSelect').value}</td>
-                <td>${data.number}</td>
-                <td>${document.querySelector('[data-template-id].active .template-content').textContent}</td>
-                <td>
-                    <span class="badge ${data.status === 'success' ? 'bg-success' : 'bg-danger'}">
-                        ${data.status}
-                        ${data.error ? `<i class="bi bi-info-circle" title="${data.error}"></i>` : ''}
-                    </span>
-                </td>
-                <td>${data.delay}s</td>
-            `;
-            
-            history.insertBefore(row, history.firstChild);
+            historyResults.unshift(newResult);
+            updateHistoryDisplay();
         });
 
         socket.on('send_error', function(data) {
@@ -695,7 +716,15 @@
 
         socket.on('send_complete', function(data) {
             document.querySelector('.sending-progress').style.display = 'none';
-            alert(`Envio concluído! ${data.total_sent} mensagens enviadas.`);
+            
+            // Formata o tempo total
+            const minutes = Math.floor(data.total_time / 60);
+            const seconds = data.total_time % 60;
+            const timeStr = minutes > 0 ? 
+                `${minutes} minutos e ${seconds} segundos` : 
+                `${seconds} segundos`;
+            
+            alert(`Envio concluído!\n${data.total_sent} mensagens enviadas em ${timeStr}.`);
         });
 
         // Start sending messages
@@ -801,10 +830,98 @@
             }
         }
 
+        // Variáveis globais para paginação do histórico
+        let historyResults = [];
+        let historyCurrentPage = 1;
+        let historyPageSize = 10;  // Valor padrão inicial
+        
+        // Função para formatar o tempo em minutos e segundos
+        function formatTime(seconds) {
+            if (!seconds) return '-';
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            if (minutes > 0) {
+                return `${minutes}min ${remainingSeconds}s`;
+            }
+            return `${remainingSeconds}s`;
+        }
+
+        // Função para atualizar a exibição do histórico com paginação
+        function updateHistoryDisplay() {
+            const historyDiv = document.getElementById('sendingHistory');
+            historyPageSize = parseInt(document.getElementById('historyPageSize').value);
+            const startIndex = (historyCurrentPage - 1) * historyPageSize;
+            const endIndex = startIndex + historyPageSize;
+            const paginatedResults = historyResults.slice(startIndex, endIndex);
+            
+            // Calcula o total de páginas
+            const totalPages = Math.ceil(historyResults.length / historyPageSize);
+            document.getElementById('totalHistoryPages').textContent = totalPages;
+            document.getElementById('currentHistoryPage').textContent = historyCurrentPage;
+            
+            // Mostra ou esconde a paginação
+            document.getElementById('historyPagination').style.display = 
+                historyResults.length > historyPageSize ? 'flex' : 'none';
+
+            // Cria o resumo do histórico
+            let html = '';
+            
+            // Adiciona cada registro do histórico
+            paginatedResults.forEach(result => {
+                const badgeClass = result.status === 'success' ? 'bg-success' : 'bg-danger';
+                const status = result.status === 'success' ? 'Sucesso' : 'Falha';
+                const error = result.error ? `<br><small class="text-danger">${result.error}</small>` : '';
+
+                html += `
+                    <tr>
+                        <td>${result.sent_date}</td>
+                        <td>${result.instance_name}</td>
+                        <td>${result.number}</td>
+                        <td>${result.message}</td>
+                        <td>
+                            <span class="badge ${badgeClass}">${status}</span>
+                            ${error}
+                        </td>
+                        <td>${result.delay}s</td>
+                        <td>${formatTime(result.total_time)}</td>
+                    </tr>
+                `;
+            });
+
+            historyDiv.innerHTML = html;
+        }
+
+        // Função para ir para a página anterior do histórico
+        function previousHistoryPage() {
+            if (historyCurrentPage > 1) {
+                historyCurrentPage--;
+                updateHistoryDisplay();
+            }
+        }
+
+        // Função para ir para a próxima página do histórico
+        function nextHistoryPage() {
+            const totalPages = Math.ceil(historyResults.length / historyPageSize);
+            if (historyCurrentPage < totalPages) {
+                historyCurrentPage++;
+                updateHistoryDisplay();
+            }
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadInstances();
             loadTemplates();
+            
+            fetch('/get-history')
+            .then(response => response.json())
+            .then(data => {
+                historyResults = data;
+                updateHistoryDisplay();
+            })
+            .catch(error => {
+                console.error('Erro ao carregar histórico:', error);
+            });
         });
     </script>
 </body>
