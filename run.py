@@ -39,7 +39,8 @@ def init_db():
                   status TEXT NOT NULL,
                   error TEXT,
                   sent_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                  delay INTEGER)''')
+                  delay INTEGER,
+                  total_time INTEGER)''')
     conn.commit()
     conn.close()
 
@@ -56,7 +57,7 @@ def index():
     templates = [{'id': row[0], 'content': row[1]} for row in c.fetchall()]
     
     # Busca histórico de envios (últimos 50)
-    c.execute('''SELECT instance_name, number, message, status, error, sent_date, delay 
+    c.execute('''SELECT instance_name, number, message, status, error, sent_date, delay, total_time 
                  FROM message_history 
                  ORDER BY sent_date DESC LIMIT 50''')
     history = [{'instance_name': row[0],
@@ -65,7 +66,8 @@ def index():
                 'status': row[3],
                 'error': row[4],
                 'sent_date': row[5],
-                'delay': row[6]} for row in c.fetchall()]
+                'delay': row[6],
+                'total_time': row[7]} for row in c.fetchall()]
     
     conn.close()
     
@@ -371,30 +373,50 @@ def clear_history():
     finally:
         conn.close()
 
+@app.route('/get-history')
+def get_history():
+    try:
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+        
+        # Busca histórico de envios (ordenado por data mais recente)
+        c.execute('''SELECT instance_name, number, message, status, error, sent_date, delay, total_time 
+                     FROM message_history 
+                     ORDER BY sent_date DESC''')
+        
+        history = [{'instance_name': row[0],
+                    'number': row[1],
+                    'message': row[2],
+                    'status': row[3],
+                    'error': row[4],
+                    'sent_date': row[5],
+                    'delay': row[6],
+                    'total_time': row[7]} for row in c.fetchall()]
+        
+        return jsonify(history)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+        
+    finally:
+        conn.close()
+
 def send_messages_task(numbers, message, instance, delay_range):
     total = len(numbers)
     current = 0
+    start_time = time.time()  # Marca o início do envio
     
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
     
     try:
         for number in numbers:
-            current += 1
-            delay = random.randint(delay_range[0], delay_range[1])
-            
-            socketio.emit('send_progress', {
-                'current': current,
-                'total': total,
-                'number': number
-            })
-            
             try:
                 # Prepara o payload da mensagem
                 payload = {
                     "number": number,
                     "options": {
-                        "delay": delay * 1000,  # Converte para milissegundos
+                        "delay": delay_range[1] * 1000,  # Converte para milissegundos
                         "presence": "composing"
                     },
                     "textMessage": {
@@ -403,6 +425,9 @@ def send_messages_task(numbers, message, instance, delay_range):
                 }
                 
                 print(f"Enviando mensagem para {number}. Payload: {payload}")  # Debug
+                
+                # Gera o delay aleatório
+                delay = random.randint(delay_range[0], delay_range[1])
                 
                 # Envia a mensagem
                 response = requests.post(
@@ -413,6 +438,9 @@ def send_messages_task(numbers, message, instance, delay_range):
                 
                 print(f"Resposta da API: Status {response.status_code} - {response.text}")  # Debug
                 
+                # Calcula o tempo decorrido até agora
+                elapsed_time = int(time.time() - start_time)
+                
                 # Considera tanto 200 quanto 201 como sucesso
                 if response.status_code in [200, 201]:
                     result = response.json() if response.text else {}
@@ -422,11 +450,11 @@ def send_messages_task(numbers, message, instance, delay_range):
                     status = 'error'
                     error = f"Erro {response.status_code}: {response.text}"
                 
-                # Salva no histórico
+                # Salva no histórico com o tempo total até o momento
                 c.execute('''INSERT INTO message_history 
-                            (instance_name, number, message, status, error, delay)
-                            VALUES (?, ?, ?, ?, ?, ?)''',
-                         (instance, number, message, status, error, delay))
+                            (instance_name, number, message, status, error, delay, total_time)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                         (instance, number, message, status, error, delay, elapsed_time))
                 conn.commit()
                 
                 # Emite o resultado
@@ -434,32 +462,62 @@ def send_messages_task(numbers, message, instance, delay_range):
                     'number': number,
                     'status': status,
                     'error': error,
-                    'delay': delay
+                    'delay': delay,
+                    'total_time': elapsed_time
                 })
+
+                # Incrementa o contador e emite o progresso após o envio
+                current += 1
+                socketio.emit('send_progress', {
+                    'current': current,
+                    'total': total,
+                    'number': number,
+                    'elapsed_time': elapsed_time
+                })
+                
+                # Aguarda o delay para o próximo envio
+                time.sleep(delay)
                 
             except Exception as e:
                 error_msg = str(e)
                 print(f"Erro ao enviar mensagem para {number}: {error_msg}")  # Debug
                 
-                # Salva o erro no histórico
+                # Calcula o tempo decorrido mesmo em caso de erro
+                elapsed_time = int(time.time() - start_time)
+                
+                # Salva o erro no histórico com o tempo total
                 c.execute('''INSERT INTO message_history 
-                            (instance_name, number, message, status, error, delay)
-                            VALUES (?, ?, ?, ?, ?, ?)''',
-                         (instance, number, message, 'error', error_msg, delay))
+                            (instance_name, number, message, status, error, delay, total_time)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                         (instance, number, message, 'error', error_msg, delay, elapsed_time))
                 conn.commit()
                 
                 # Emite o erro
                 socketio.emit('send_error', {
                     'number': number,
-                    'error': error_msg
+                    'error': error_msg,
+                    'total_time': elapsed_time
                 })
-            
-            # Aguarda o delay
-            time.sleep(delay)
+
+                # Incrementa o contador e emite o progresso mesmo em caso de erro
+                current += 1
+                socketio.emit('send_progress', {
+                    'current': current,
+                    'total': total,
+                    'number': number,
+                    'elapsed_time': elapsed_time
+                })
+                
+                # Aguarda o delay mesmo em caso de erro
+                time.sleep(delay)
         
-        # Emite conclusão
+        # Calcula o tempo total gasto
+        total_time = int(time.time() - start_time)
+        
+        # Emite conclusão com o tempo total
         socketio.emit('send_complete', {
-            'total_sent': total
+            'total_sent': current,
+            'total_time': total_time
         })
         
     finally:
