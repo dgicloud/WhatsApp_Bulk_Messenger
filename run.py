@@ -30,6 +30,7 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS message_templates
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  name TEXT NOT NULL,
                   content TEXT NOT NULL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS message_history
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +55,7 @@ def index():
     
     # Busca templates
     c.execute('SELECT * FROM message_templates')
-    templates = [{'id': row[0], 'content': row[1]} for row in c.fetchall()]
+    templates = [{'id': row[0], 'name': row[1], 'content': row[2]} for row in c.fetchall()]
     
     # Busca histórico de envios (últimos 50)
     c.execute('''SELECT instance_name, number, message, status, error, sent_date, delay, total_time 
@@ -267,41 +268,43 @@ def manage_templates():
     try:
         if request.method == 'GET':
             c.execute('SELECT * FROM message_templates')
-            templates = [{'id': row[0], 'content': row[1]} for row in c.fetchall()]
+            templates = [{'id': row[0], 'name': row[1], 'content': row[2]} for row in c.fetchall()]
             return jsonify(templates)
             
         elif request.method == 'POST':
             data = request.json
+            name = data.get('name')
             content = data.get('content')
-            if not content:
-                return jsonify({'error': 'Template content is required'}), 400
+            if not name or not content:
+                return jsonify({'error': 'Nome e conteúdo são obrigatórios'}), 400
                 
-            c.execute('INSERT INTO message_templates (content) VALUES (?)', (content,))
+            c.execute('INSERT INTO message_templates (name, content) VALUES (?, ?)', (name, content))
             template_id = c.lastrowid
             conn.commit()
             
-            return jsonify({'id': template_id, 'content': content})
+            return jsonify({'id': template_id, 'name': name, 'content': content})
             
         elif request.method == 'PUT':
             data = request.json
             template_id = data.get('id')
+            name = data.get('name')
             content = data.get('content')
             
-            if not template_id or not content:
-                return jsonify({'error': 'Template ID and content are required'}), 400
+            if not template_id or not name or not content:
+                return jsonify({'error': 'ID, nome e conteúdo são obrigatórios'}), 400
                 
-            c.execute('UPDATE message_templates SET content = ? WHERE id = ?', 
-                     (content, template_id))
+            c.execute('UPDATE message_templates SET name = ?, content = ? WHERE id = ?', 
+                     (name, content, template_id))
             conn.commit()
             
-            return jsonify({'id': template_id, 'content': content})
+            return jsonify({'id': template_id, 'name': name, 'content': content})
             
         elif request.method == 'DELETE':
             data = request.json
             template_id = data.get('id')
             
             if not template_id:
-                return jsonify({'error': 'Template ID is required'}), 400
+                return jsonify({'error': 'ID do template é obrigatório'}), 400
                 
             c.execute('DELETE FROM message_templates WHERE id = ?', (template_id,))
             conn.commit()
@@ -401,9 +404,134 @@ def get_history():
     finally:
         conn.close()
 
+@app.route('/add-template', methods=['POST'])
+def add_template():
+    try:
+        data = request.get_json()
+        
+        if not data or 'name' not in data or 'content' not in data:
+            return jsonify({'error': 'Nome e conteúdo são obrigatórios'}), 400
+            
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+        
+        c.execute('INSERT INTO message_templates (name, content) VALUES (?, ?)',
+                 (data['name'], data['content']))
+        conn.commit()
+        
+        template_id = c.lastrowid
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'id': template_id,
+            'message': 'Template criado com sucesso'
+        })
+        
+    except Exception as e:
+        print(f"Erro ao adicionar template: {str(e)}")
+        return jsonify({'error': 'Erro ao salvar template'}), 500
+
+@app.route('/update-template/<int:template_id>', methods=['PUT'])
+def update_template(template_id):
+    try:
+        data = request.get_json()
+        
+        if not data or 'name' not in data or 'content' not in data:
+            return jsonify({'error': 'Nome e conteúdo são obrigatórios'}), 400
+            
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+        
+        c.execute('UPDATE message_templates SET name = ?, content = ? WHERE id = ?',
+                 (data['name'], data['content'], template_id))
+        conn.commit()
+        
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({'error': 'Template não encontrado'}), 404
+            
+        conn.close()
+        return jsonify({
+            'success': True,
+            'message': 'Template atualizado com sucesso'
+        })
+        
+    except Exception as e:
+        print(f"Erro ao atualizar template: {str(e)}")
+        return jsonify({'error': 'Erro ao atualizar template'}), 500
+
+@app.route('/delete-template/<int:template_id>', methods=['DELETE'])
+def delete_template(template_id):
+    try:
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+        
+        c.execute('DELETE FROM message_templates WHERE id = ?', (template_id,))
+        conn.commit()
+        
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({'error': 'Template não encontrado'}), 404
+            
+        conn.close()
+        return jsonify({
+            'success': True,
+            'message': 'Template excluído com sucesso'
+        })
+        
+    except Exception as e:
+        print(f"Erro ao excluir template: {str(e)}")
+        return jsonify({'error': 'Erro ao excluir template'}), 500
+
+@app.route('/get-template/<int:template_id>', methods=['GET'])
+def get_template(template_id):
+    try:
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+        
+        c.execute('SELECT name, content FROM message_templates WHERE id = ?', (template_id,))
+        template = c.fetchone()
+        
+        if not template:
+            conn.close()
+            return jsonify({'error': 'Template não encontrado'}), 404
+            
+        conn.close()
+        return jsonify({
+            'name': template[0],
+            'content': template[1]
+        })
+        
+    except Exception as e:
+        print(f"Erro ao buscar template: {str(e)}")
+        return jsonify({'error': 'Erro ao buscar template'}), 500
+
+@app.route('/list-templates', methods=['GET'])
+def list_templates():
+    try:
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+        
+        c.execute('SELECT id, name, content FROM message_templates ORDER BY id DESC')
+        templates = [{
+            'id': row[0],
+            'name': row[1],
+            'content': row[2]
+        } for row in c.fetchall()]
+        
+        conn.close()
+        return jsonify(templates)
+        
+    except Exception as e:
+        print(f"Erro ao listar templates: {str(e)}")
+        return jsonify({'error': 'Erro ao listar templates'}), 500
+
 def send_messages_task(numbers, message, instance, delay_range):
     total = len(numbers)
     current = 0
+    success_count = 0
+    error_count = 0
     start_time = time.time()  # Marca o início do envio
     
     conn = sqlite3.connect(DATABASE)
@@ -446,9 +574,11 @@ def send_messages_task(numbers, message, instance, delay_range):
                     result = response.json() if response.text else {}
                     status = 'success'
                     error = None
+                    success_count += 1
                 else:
                     status = 'error'
                     error = f"Erro {response.status_code}: {response.text}"
+                    error_count += 1
                 
                 # Salva no histórico com o tempo total até o momento
                 c.execute('''INSERT INTO message_history 
@@ -484,6 +614,7 @@ def send_messages_task(numbers, message, instance, delay_range):
                 
                 # Calcula o tempo decorrido mesmo em caso de erro
                 elapsed_time = int(time.time() - start_time)
+                error_count += 1
                 
                 # Salva o erro no histórico com o tempo total
                 c.execute('''INSERT INTO message_history 
@@ -514,10 +645,17 @@ def send_messages_task(numbers, message, instance, delay_range):
         # Calcula o tempo total gasto
         total_time = int(time.time() - start_time)
         
-        # Emite conclusão com o tempo total
+        # Calcula a média de tempo por mensagem (em segundos)
+        avg_time = total_time / total if total > 0 else 0
+        
+        # Emite conclusão com estatísticas detalhadas
         socketio.emit('send_complete', {
             'total_sent': current,
-            'total_time': total_time
+            'success_count': success_count,
+            'error_count': error_count,
+            'total_time': total_time,
+            'avg_time': round(avg_time, 1),
+            'success_rate': round((success_count / total) * 100 if total > 0 else 0, 1)
         })
         
     finally:

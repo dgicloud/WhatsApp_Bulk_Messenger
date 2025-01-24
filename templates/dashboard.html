@@ -36,6 +36,26 @@
     </style>
 </head>
 <body>
+    <!-- Modal de Alertas -->
+<div class="modal fade" id="alertModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <span id="alertIcon" class="me-2"></span>
+                    <span id="alertTitle">Aviso</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="alertMessage" class="mb-0"></p>
+            </div>
+            <div class="modal-footer" id="alertFooter">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
     <div class="container mt-4">
         <div class="row">
             <div class="col-12 text-center mb-4">
@@ -249,6 +269,74 @@
         </div>
     </div>
 
+    <!-- Modal de Estatísticas -->
+    <div class="modal fade" id="statsModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">📊 Estatísticas do Envio</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row text-center">
+                        <div class="col-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2 text-muted">Total Enviado</h6>
+                                    <h4 class="card-title" id="statsTotalSent">0</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2 text-muted">Taxa de Sucesso</h6>
+                                    <h4 class="card-title" id="statsSuccessRate">0%</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="card text-white" id="statsSuccessCard">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2">Sucessos</h6>
+                                    <h4 class="card-title" id="statsSuccess">0</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="card text-white" id="statsErrorCard">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle mb-2">Falhas</h6>
+                                    <h4 class="card-title" id="statsErrors">0</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="text-muted mb-3">Tempo</h6>
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span>Tempo Total:</span>
+                                        <strong id="statsTotalTime">-</strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span>Média por Mensagem:</span>
+                                        <strong id="statsAvgTime">-</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Sending Progress -->
     <div class="sending-progress" style="display: none;">
         <div class="card">
@@ -269,9 +357,69 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
     <script>
+        // Função para mostrar alertas personalizados
+        function showAlert(message, type = 'info', title = null, callback = null) {
+            const modal = document.getElementById('alertModal');
+            const iconSpan = document.getElementById('alertIcon');
+            const titleSpan = document.getElementById('alertTitle');
+            const messageP = document.getElementById('alertMessage');
+            const footer = document.getElementById('alertFooter');
+            
+            // Define ícones e cores baseados no tipo
+            const icons = {
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️',
+                'confirm': '❓'
+            };
+            
+            const titles = {
+                'success': 'Sucesso',
+                'error': 'Erro',
+                'warning': 'Atenção',
+                'info': 'Aviso',
+                'confirm': 'Confirmação'
+            };
+            
+            // Configura o modal
+            iconSpan.textContent = icons[type] || icons.info;
+            titleSpan.textContent = title || titles[type];
+            messageP.textContent = message;
+            
+            // Configura os botões
+            if (type === 'confirm') {
+                footer.innerHTML = `
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="confirmBtn">Confirmar</button>
+                `;
+                
+                // Adiciona evento ao botão de confirmar
+                document.getElementById('confirmBtn').onclick = () => {
+                    bootstrap.Modal.getInstance(modal).hide();
+                    if (callback) callback(true);
+                };
+            } else {
+                footer.innerHTML = `
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+                `;
+            }
+            
+            // Mostra o modal
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            // Se não for confirmação, executa callback após fechar
+            if (type !== 'confirm') {
+                modal.addEventListener('hidden.bs.modal', () => {
+                    if (callback) callback();
+                }, { once: true });
+            }
+        }
+
         // Socket.IO setup
         const socket = io();
         
@@ -279,124 +427,108 @@
         const templateModal = new bootstrap.Modal(document.getElementById('templateModal'));
         
         function showAddTemplateModal() {
-            document.getElementById('templateModalTitle').textContent = 'Adicionar Template';
             document.getElementById('templateId').value = '';
             document.getElementById('templateName').value = '';
             document.getElementById('templateContent').value = '';
-            templateModal.show();
-        }
-        
-        function editTemplate(templateId) {
-            const template = document.querySelector(`[data-template-id="${templateId}"]`);
-            const content = template.querySelector('.template-content').textContent;
-            const name = template.querySelector('h6').textContent;
+            document.getElementById('templateModalTitle').textContent = 'Adicionar Template';
             
-            document.getElementById('templateModalTitle').textContent = 'Editar Template';
-            document.getElementById('templateId').value = templateId;
-            document.getElementById('templateName').value = name;
-            document.getElementById('templateContent').value = content;
+            const templateModal = new bootstrap.Modal(document.getElementById('templateModal'));
             templateModal.show();
         }
-        
-        // Função para salvar template
+
+        function editTemplate(templateId) {
+            fetch(`/get-template/${templateId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showAlert('Erro ao carregar template: ' + data.error, 'error');
+                        return;
+                    }
+                    
+                    document.getElementById('templateId').value = templateId;
+                    document.getElementById('templateName').value = data.name;
+                    document.getElementById('templateContent').value = data.content;
+                    document.getElementById('templateModalTitle').textContent = 'Editar Template';
+                    
+                    const templateModal = new bootstrap.Modal(document.getElementById('templateModal'));
+                    templateModal.show();
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    showAlert('Erro ao carregar template. Tente novamente.', 'error');
+                });
+        }
+
         function saveTemplate() {
             const templateId = document.getElementById('templateId').value;
             const templateName = document.getElementById('templateName').value;
             const templateContent = document.getElementById('templateContent').value;
 
             if (!templateName || !templateContent) {
-                alert('Por favor, preencha todos os campos.');
+                showAlert('Por favor, preencha todos os campos.', 'warning');
                 return;
             }
 
-            const method = templateId ? 'PUT' : 'POST';
-            const data = {
-                id: templateId || null,
-                name: templateName,
-                content: templateContent
-            };
-
-            fetch('/message-templates', {
-                method: method,
+            const url = templateId ? `/update-template/${templateId}` : '/add-template';
+            
+            fetch(url, {
+                method: templateId ? 'PUT' : 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(data),
+                body: JSON.stringify({
+                    name: templateName,
+                    content: templateContent
+                }),
             })
             .then(response => response.json())
             .then(result => {
                 if (result.error) {
-                    alert('Erro ao salvar template: ' + result.error);
+                    showAlert('Erro ao salvar template: ' + result.error, 'error');
                     return;
                 }
                 
-                // Limpa o formulário
-                document.getElementById('templateId').value = '';
-                document.getElementById('templateName').value = '';
-                document.getElementById('templateContent').value = '';
-                
                 // Fecha o modal
-                const modal = bootstrap.Modal.getInstance(document.getElementById('templateModal'));
-                modal.hide();
+                bootstrap.Modal.getInstance(document.getElementById('templateModal')).hide();
                 
-                // Recarrega os templates
+                // Recarrega a lista de templates
                 loadTemplates();
+                
+                // Mostra mensagem de sucesso
+                showAlert('Template salvo com sucesso!', 'success');
             })
             .catch(error => {
                 console.error('Erro:', error);
-                alert('Erro ao salvar template. Tente novamente.');
+                showAlert('Erro ao salvar template. Tente novamente.', 'error');
             });
         }
-        
+
         function deleteTemplate(templateId) {
-            if (!confirm('Tem certeza que deseja excluir este template?')) {
-                return;
-            }
-            
-            fetch('/message-templates', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: templateId })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    loadTemplates();
+            showAlert(
+                'Tem certeza que deseja excluir este template?',
+                'confirm',
+                'Excluir Template',
+                (confirmed) => {
+                    if (confirmed) {
+                        fetch(`/delete-template/${templateId}`, {
+                            method: 'DELETE'
+                        })
+                        .then(response => response.json())
+                        .then(result => {
+                            if (result.success) {
+                                loadTemplates();
+                                showAlert('Template excluído com sucesso!', 'success');
+                            } else {
+                                showAlert('Erro ao excluir template: ' + result.error, 'error');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Erro ao excluir template:', error);
+                            showAlert('Erro ao excluir template. Tente novamente.', 'error');
+                        });
+                    }
                 }
-            })
-            .catch(error => {
-                console.error('Erro ao excluir template:', error);
-                alert('Erro ao excluir template');
-            });
-        }
-        
-        function loadTemplates() {
-            fetch('/message-templates')
-            .then(response => response.json())
-            .then(templates => {
-                const container = document.getElementById('messageTemplates');
-                container.innerHTML = templates.map(template => `
-                    <div class="list-group-item list-group-item-action" data-template-id="${template.id}">
-                        <div class="d-flex w-100 justify-content-between align-items-center">
-                            <div class="template-content">
-                                <h6 class="mb-1">${template.name || ''}</h6>
-                                <p class="mb-1">${template.content || ''}</p>
-                            </div>
-                            <div class="template-actions">
-                                <button class="btn btn-sm btn-outline-primary me-1" onclick="editTemplate(${template.id})">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                <button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(${template.id})">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-            })
-            .catch(error => {
-                console.error('Erro ao carregar templates:', error);
-            });
+            );
         }
 
         // Variáveis globais para paginação
@@ -613,7 +745,7 @@
         function validateNumbers() {
             const instanceName = document.getElementById('instanceSelect').value;
             if (!instanceName) {
-                alert('Por favor, selecione uma instância.');
+                showAlert('Por favor, selecione uma instância.', 'error', 'Erro ao Validar Números');
                 return;
             }
 
@@ -623,7 +755,7 @@
                 .filter(n => n.length > 0);
 
             if (numbers.length === 0) {
-                alert('Por favor, insira pelo menos um número.');
+                showAlert('Por favor, insira pelo menos um número.', 'error', 'Erro ao Validar Números');
                 return;
             }
 
@@ -692,10 +824,9 @@
         });
 
         socket.on('send_result', function(data) {
-            // Adiciona o novo resultado ao início do array
-            const now = new Date().toLocaleString();
+            // Adiciona o novo resultado ao histórico
             const newResult = {
-                sent_date: now,
+                sent_date: new Date().toLocaleString(),
                 instance_name: document.getElementById('instanceSelect').value,
                 number: data.number,
                 message: document.querySelector('[data-template-id].active .template-content').textContent,
@@ -705,99 +836,64 @@
                 total_time: data.total_time
             };
             
+            // Atualiza o histórico e a exibição
             historyResults.unshift(newResult);
             updateHistoryDisplay();
         });
 
+        socket.on('send_complete', function(data) {
+            // Atualiza a barra de progresso para mostrar que está carregando as estatísticas
+            const progressBar = document.querySelector('.sending-progress .progress-bar');
+            const sendingStatus = document.getElementById('sendingStatus');
+            
+            progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-info';
+            progressBar.style.width = '100%';
+            progressBar.setAttribute('aria-valuenow', 100);
+            
+            sendingStatus.innerHTML = '<i class="bi bi-graph-up"></i> Carregando estatísticas, aguarde...';
+            
+            // Pequeno delay para mostrar a mensagem de carregamento antes de exibir o modal
+            setTimeout(() => {
+                try {
+                    // Esconde a barra de progresso
+                    document.querySelector('.sending-progress').style.display = 'none';
+                    document.getElementById('sendButton').disabled = false;
+                    
+                    // Atualiza as estatísticas no modal
+                    document.getElementById('statsTotalSent').textContent = data.total_sent;
+                    document.getElementById('statsSuccessRate').textContent = data.success_rate + '%';
+                    document.getElementById('statsSuccess').textContent = data.success_count;
+                    document.getElementById('statsErrors').textContent = data.error_count;
+                    
+                    // Atualiza as cores dos cards de sucesso/erro
+                    const successCard = document.getElementById('statsSuccessCard');
+                    const errorCard = document.getElementById('statsErrorCard');
+                    
+                    successCard.className = 'card text-white ' + 
+                        (data.success_count > 0 ? 'bg-success' : 'bg-secondary');
+                    errorCard.className = 'card text-white ' + 
+                        (data.error_count > 0 ? 'bg-danger' : 'bg-secondary');
+                    
+                    // Formata e exibe os tempos
+                    document.getElementById('statsTotalTime').textContent = formatTime(data.total_time);
+                    document.getElementById('statsAvgTime').textContent = data.avg_time + 's';
+                    
+                    // Mostra o modal
+                    const statsModal = new bootstrap.Modal(document.getElementById('statsModal'));
+                    statsModal.show();
+                } catch (error) {
+                    console.error('Erro ao mostrar estatísticas:', error);
+                    showAlert(`Envio concluído! ${data.total_sent} mensagens enviadas em ${formatTime(data.total_time)}.`, 'success', 'Envio Concluído');
+                    document.querySelector('.sending-progress').style.display = 'none';
+                    document.getElementById('sendButton').disabled = false;
+                }
+            }, 1000); // Delay de 1 segundo para mostrar a mensagem de carregamento
+        });
+
         socket.on('send_error', function(data) {
             console.error('Erro no envio:', data);
-            alert(`Erro ao enviar para ${data.number}: ${data.error}`);
+            showAlert(`Erro ao enviar para ${data.number}: ${data.error}`, 'error', 'Erro no Envio');
         });
-
-        socket.on('send_complete', function(data) {
-            document.querySelector('.sending-progress').style.display = 'none';
-            
-            // Formata o tempo total
-            const minutes = Math.floor(data.total_time / 60);
-            const seconds = data.total_time % 60;
-            const timeStr = minutes > 0 ? 
-                `${minutes} minutos e ${seconds} segundos` : 
-                `${seconds} segundos`;
-            
-            alert(`Envio concluído!\n${data.total_sent} mensagens enviadas em ${timeStr}.`);
-        });
-
-        // Start sending messages
-        function startSending() {
-            const instanceName = document.getElementById('instanceSelect').value;
-            if (!instanceName) {
-                alert('Por favor, selecione uma instância.');
-                return;
-            }
-
-            // Pega todos os números válidos da lista completa de validação
-            const validNumbers = validationResults
-                .filter(result => result.valid)
-                .map(result => result.number);
-
-            if (validNumbers.length === 0) {
-                alert('Nenhum número válido para envio. Por favor, valide os números primeiro.');
-                return;
-            }
-
-            const activeTemplate = document.querySelector('[data-template-id].active');
-            if (!activeTemplate) {
-                alert('Por favor, selecione um template de mensagem.');
-                return;
-            }
-
-            const templateId = activeTemplate.dataset.templateId;
-            const minDelay = parseInt(document.getElementById('minDelay').value);
-            const maxDelay = parseInt(document.getElementById('maxDelay').value);
-
-            if (minDelay > maxDelay) {
-                alert('O delay mínimo deve ser menor que o máximo.');
-                return;
-            }
-
-            if (!confirm(`Deseja enviar a mensagem para ${validNumbers.length} números?`)) {
-                return;
-            }
-
-            // Reset progress
-            document.querySelector('.progress-bar').style.width = '0%';
-            document.querySelector('.progress-bar').textContent = '0%';
-            document.querySelector('.sending-progress').style.display = 'block';
-            document.getElementById('sendButton').disabled = true;
-
-            // Envia a requisição
-            fetch('/send-messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    instance: instanceName,
-                    numbers: validNumbers,
-                    template_id: templateId,
-                    delay_range: [minDelay, maxDelay]
-                }),
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    alert('Erro ao iniciar envio: ' + data.error);
-                    document.getElementById('sendButton').disabled = false;
-                    document.querySelector('.sending-progress').style.display = 'none';
-                }
-            })
-            .catch(error => {
-                console.error('Erro:', error);
-                alert('Erro ao iniciar envio. Tente novamente.');
-                document.getElementById('sendButton').disabled = false;
-                document.querySelector('.sending-progress').style.display = 'none';
-            });
-        }
 
         // Template selection
         document.getElementById('messageTemplates').addEventListener('click', function(e) {
@@ -808,26 +904,32 @@
             }
         });
 
-        // Função para limpar histórico
+        // Clear history
         function clearHistory() {
-            if (confirm('Tem certeza que deseja limpar todo o histórico de envios?')) {
-                fetch('/clear-history', {
-                    method: 'POST',
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('sendingHistory').innerHTML = '';
-                        alert('Histórico limpo com sucesso!');
-                    } else {
-                        alert('Erro ao limpar histórico: ' + data.error);
+            showAlert(
+                'Tem certeza que deseja limpar todo o histórico de envios?',
+                'confirm',
+                'Limpar Histórico',
+                (confirmed) => {
+                    if (confirmed) {
+                        fetch('/clear-history', { method: 'POST' })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    historyResults = [];
+                                    updateHistoryDisplay();
+                                    showAlert('Histórico limpo com sucesso!', 'success', 'Histórico Limpo');
+                                } else {
+                                    showAlert('Erro ao limpar histórico: ' + data.error, 'error', 'Erro ao Limpar Histórico');
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Erro:', error);
+                                showAlert('Erro ao limpar histórico. Tente novamente.', 'error', 'Erro ao Limpar Histórico');
+                            });
                     }
-                })
-                .catch(error => {
-                    console.error('Erro:', error);
-                    alert('Erro ao limpar histórico. Tente novamente.');
-                });
-            }
+                }
+            );
         }
 
         // Variáveis globais para paginação do histórico
@@ -908,6 +1010,78 @@
             }
         }
 
+        // Start sending messages
+        function startSending() {
+            const instanceName = document.getElementById('instanceSelect').value;
+            if (!instanceName) {
+                showAlert('Por favor, selecione uma instância.', 'error', 'Erro ao Iniciar Envio');
+                return;
+            }
+
+            // Pega todos os números válidos da lista completa de validação
+            const validNumbers = validationResults
+                .filter(result => result.valid)
+                .map(result => result.number);
+
+            if (validNumbers.length === 0) {
+                showAlert('Nenhum número válido para envio. Por favor, valide os números primeiro.', 'error', 'Erro ao Iniciar Envio');
+                return;
+            }
+
+            const activeTemplate = document.querySelector('[data-template-id].active');
+            if (!activeTemplate) {
+                showAlert('Por favor, selecione um template de mensagem.', 'error', 'Erro ao Iniciar Envio');
+                return;
+            }
+
+            const templateId = activeTemplate.dataset.templateId;
+            const minDelay = parseInt(document.getElementById('minDelay').value);
+            const maxDelay = parseInt(document.getElementById('maxDelay').value);
+
+            if (minDelay > maxDelay) {
+                showAlert('O delay mínimo deve ser menor que o máximo.', 'error', 'Erro ao Iniciar Envio');
+                return;
+            }
+
+            if (!confirm(`Deseja enviar a mensagem para ${validNumbers.length} números?`)) {
+                return;
+            }
+
+            // Reset progress
+            document.querySelector('.progress-bar').style.width = '0%';
+            document.querySelector('.progress-bar').textContent = '0%';
+            document.querySelector('.sending-progress').style.display = 'block';
+            document.getElementById('sendButton').disabled = true;
+
+            // Envia a requisição
+            fetch('/send-messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    instance: instanceName,
+                    numbers: validNumbers,
+                    template_id: templateId,
+                    delay_range: [minDelay, maxDelay]
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('Erro ao iniciar envio: ' + data.error, 'error', 'Erro ao Iniciar Envio');
+                    document.getElementById('sendButton').disabled = false;
+                    document.querySelector('.sending-progress').style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Erro:', error);
+                showAlert('Erro ao iniciar envio. Tente novamente.', 'error', 'Erro ao Iniciar Envio');
+                document.getElementById('sendButton').disabled = false;
+                document.querySelector('.sending-progress').style.display = 'none';
+            });
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadInstances();
@@ -921,8 +1095,39 @@
             })
             .catch(error => {
                 console.error('Erro ao carregar histórico:', error);
+                showAlert('Erro ao carregar histórico', 'error', 'Erro ao Carregar Histórico');
             });
         });
+
+        function loadTemplates() {
+            fetch('/list-templates')
+            .then(response => response.json())
+            .then(templates => {
+                const container = document.getElementById('messageTemplates');
+                container.innerHTML = templates.map(template => `
+                    <div class="list-group-item list-group-item-action" data-template-id="${template.id}">
+                        <div class="d-flex w-100 justify-content-between align-items-center">
+                            <div class="template-content">
+                                <h6 class="mb-1">${template.name || ''}</h6>
+                                <p class="mb-1">${template.content || ''}</p>
+                            </div>
+                            <div class="template-actions">
+                                <button class="btn btn-sm btn-outline-primary me-1" onclick="editTemplate(${template.id})">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(${template.id})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            })
+            .catch(error => {
+                console.error('Erro ao carregar templates:', error);
+                showAlert('Erro ao carregar templates', 'error');
+            });
+        }
     </script>
 </body>
 </html>
