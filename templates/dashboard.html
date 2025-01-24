@@ -1043,43 +1043,51 @@
                 return;
             }
 
-            if (!confirm(`Deseja enviar a mensagem para ${validNumbers.length} números?`)) {
-                return;
-            }
+            // Confirmação com modal personalizado
+            showAlert(
+                `Deseja enviar a mensagem para ${validNumbers.length} números?`,
+                'confirm',
+                'Confirmar Envio',
+                (confirmed) => {
+                    if (confirmed) {
+                        // Reset progress
+                        const progressBar = document.querySelector('.progress-bar');
+                        progressBar.style.width = '0%';
+                        progressBar.textContent = '0%';
+                        progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated';
+                        document.querySelector('.sending-progress').style.display = 'block';
+                        document.getElementById('sendButton').disabled = true;
 
-            // Reset progress
-            document.querySelector('.progress-bar').style.width = '0%';
-            document.querySelector('.progress-bar').textContent = '0%';
-            document.querySelector('.sending-progress').style.display = 'block';
-            document.getElementById('sendButton').disabled = true;
-
-            // Envia a requisição
-            fetch('/send-messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    instance: instanceName,
-                    numbers: validNumbers,
-                    template_id: templateId,
-                    delay_range: [minDelay, maxDelay]
-                }),
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    showAlert('Erro ao iniciar envio: ' + data.error, 'error', 'Erro ao Iniciar Envio');
-                    document.getElementById('sendButton').disabled = false;
-                    document.querySelector('.sending-progress').style.display = 'none';
+                        // Envia a requisição
+                        fetch('/send-messages', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                instance: instanceName,
+                                numbers: validNumbers,
+                                template_id: templateId,
+                                delay_range: [minDelay, maxDelay]
+                            }),
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.error) {
+                                showAlert('Erro ao iniciar envio: ' + data.error, 'error');
+                                document.getElementById('sendButton').disabled = false;
+                                document.querySelector('.sending-progress').style.display = 'none';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Erro:', error);
+                            showAlert('Erro ao iniciar envio. Tente novamente.', 'error');
+                            document.getElementById('sendButton').disabled = false;
+                            document.querySelector('.sending-progress').style.display = 'none';
+                        });
+                    }
                 }
-            })
-            .catch(error => {
-                console.error('Erro:', error);
-                showAlert('Erro ao iniciar envio. Tente novamente.', 'error', 'Erro ao Iniciar Envio');
-                document.getElementById('sendButton').disabled = false;
-                document.querySelector('.sending-progress').style.display = 'none';
-            });
+            );
         }
 
         // Initialize
